@@ -52,6 +52,7 @@ UrgNode::UrgNode(const rclcpp::NodeOptions & node_options)
   lockout_status_(false),
   close_diagnostics_(true),
   close_scan_(true),
+  close_status_(true),
   ip_address_(""),
   ip_port_(10940),
   serial_port_("/dev/cu.usbmodem141101"),
@@ -59,6 +60,8 @@ UrgNode::UrgNode(const rclcpp::NodeOptions & node_options)
   calibrate_time_(false),
   publish_intensity_(false),
   publish_multiecho_(false),
+  publish_scan_(true),
+  publish_status_(false),
   diagnostics_tolerance_(0.05),
   diagnostics_window_time_(5.0),
   detailed_status_(false),
@@ -85,6 +88,8 @@ void UrgNode::initSetup()
   calibrate_time_ = this->declare_parameter<bool>("calibrate_time", calibrate_time_);
   publish_intensity_ = this->declare_parameter<bool>("publish_intensity", publish_intensity_);
   publish_multiecho_ = this->declare_parameter<bool>("publish_multiecho", publish_multiecho_);
+  publish_scan_ = this->declare_parameter<bool>("publish_scan", publish_scan_);
+  publish_status_ = this->declare_parameter<bool>("publish_status", publish_status_);
   error_limit_ = this->declare_parameter<int>("error_limit", error_limit_);
   diagnostics_tolerance_ = this->declare_parameter<double>(
     "diagnostics_tolerance",
@@ -100,6 +105,13 @@ void UrgNode::initSetup()
   angle_max_ = this->declare_parameter<double>("angle_max", angle_max_);
   skip_ = this->declare_parameter<int>("skip", skip_);
   cluster_ = this->declare_parameter<int>("cluster", cluster_);
+
+
+  if (publish_scan_ && publish_status_){
+      RCLCPP_ERROR(
+        this->get_logger(), "Cannot publish scan data and status data at the same time. Choose one!");
+      exit(1);
+  }
 
   // Set up publishers and diagnostics updaters, we only need one
   if (publish_multiecho_) {
@@ -142,6 +154,10 @@ UrgNode::~UrgNode()
   if (scan_thread_.joinable()) {
     close_scan_ = true;
     scan_thread_.join();
+  }
+  if (status_thread_.joinable()) {
+    close_status_ = true;
+    status_thread_.join();
   }
 }
 
@@ -577,6 +593,13 @@ bool UrgNode::connect()
   return false;
 }
 
+void UrgNode::statusThread()
+{
+    while(!close_status_) {
+        updateStatus();
+    }
+}
+
 void UrgNode::scanThread()
 {
   while (!close_scan_) {
@@ -680,31 +703,42 @@ void UrgNode::run()
     diagnostics_thread_.join();
   }
 
-  if (publish_multiecho_) {
-    echoes_freq_.reset(
-      new diagnostic_updater::HeaderlessTopicDiagnostic(
-        "Laser Echoes",
-        diagnostic_updater_,
-        FrequencyStatusParam(
-          &freq_min_, &freq_min_, diagnostics_tolerance_,
-          diagnostics_window_time_)));
-  } else {
-    laser_freq_.reset(
-      new diagnostic_updater::HeaderlessTopicDiagnostic(
-        "Laser Scan",
-        diagnostic_updater_,
-        FrequencyStatusParam(
-          &freq_min_, &freq_min_, diagnostics_tolerance_,
-          diagnostics_window_time_)));
+  if(publish_scan_) {
+      if (publish_multiecho_) {
+        echoes_freq_.reset(
+          new diagnostic_updater::HeaderlessTopicDiagnostic(
+            "Laser Echoes",
+            diagnostic_updater_,
+            FrequencyStatusParam(
+              &freq_min_, &freq_min_, diagnostics_tolerance_,
+              diagnostics_window_time_)));
+      } else {
+        laser_freq_.reset(
+          new diagnostic_updater::HeaderlessTopicDiagnostic(
+            "Laser Scan",
+            diagnostic_updater_,
+            FrequencyStatusParam(
+              &freq_min_, &freq_min_, diagnostics_tolerance_,
+              diagnostics_window_time_)));
+      }
   }
 
   //// Now that we are setup, kick off diagnostics.
   close_diagnostics_ = false;
   diagnostics_thread_ = std::thread(std::bind(&UrgNode::updateDiagnostics, this));
 
-  // Start scanning now that everything is configured.
-  close_scan_ = false;
-  scan_thread_ = std::thread(std::bind(&UrgNode::scanThread, this));
+  if(publish_scan_) {
+      // Start scanning now that everything is configured.
+      close_scan_ = false;
+      scan_thread_ = std::thread(std::bind(&UrgNode::scanThread, this));
+  }
+
+  if(publish_status_) {
+      // Start continous publishing of status data
+      close_status_ = false;
+      status_thread_ = std::thread(std::bind(&UrgNode::statusThread, this));
+  }
+
 }
 }  // namespace urg_node
 

@@ -96,6 +96,8 @@ private:
 
   void scanThread();
 
+  void statusThread();
+
   void statusCallback(
     const std::shared_ptr<rmw_request_id_t> requestHeader,
     const std_srvs::srv::Trigger::Request::SharedPtr req,
@@ -104,6 +106,7 @@ private:
   std::thread run_thread_;
   std::thread diagnostics_thread_;
   std::thread scan_thread_;
+  std::thread status_thread_;
 
   std::unique_ptr<urg_node::URGCWrapper> urg_;
 
@@ -133,6 +136,7 @@ private:
   double freq_min_;
   bool close_diagnostics_;
   bool close_scan_;
+  bool close_status_;
 
   std::string ip_address_;
   int ip_port_;
@@ -143,6 +147,8 @@ private:
   bool synchronize_time_;
   bool publish_intensity_;
   bool publish_multiecho_;
+  bool publish_scan_;
+  bool publish_status_;
   double diagnostics_tolerance_;
   double diagnostics_window_time_;
   bool detailed_status_;

@@ -14,5 +14,7 @@ urg_node:
     get_detailed_status: false
     publish_intensity: false
     publish_multiecho: false
+    publish_scan: true
+    publish_status: false
     cluster: 1
     skip: 0
